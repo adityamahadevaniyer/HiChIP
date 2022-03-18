@@ -1,0 +1,211 @@
+---
+title: "HiChIP-dataanalysis"
+author: "Aditya Mahadevan"
+date: "1/7/2022"
+output: html_document
+---
+Here, I will be annotating the anchors and contact regions as hotspots, TSS or enhancers and then will be computing the number of hotspot-hotspot and other interactions. The HiChIP data will be in the form of 2 bed files concatenated side by side and will be doing some pre-processing before using it in R. 
+```{r}
+#Loading all the required packages
+suppressPackageStartupMessages(library(plyranges))
+library(GenomicRanges)
+library(readxl)
+library(tidyverse)
+library(dplyr)
+library(magrittr)
+```
+
+
+```{r}
+# Function to take intersect two bed files using GRanges
+intersect_bed <- function(x, y){
+  # load into GRanges object
+  a <- makeGRangesFromDataFrame(x, keep.extra.columns = T)
+  b <- makeGRangesFromDataFrame(y, keep.extra.columns = T)
+  # find overlaps
+  my_df  <- data.frame(join_overlap_intersect(a,b)) # join_overlap_intersect function from plyranges
+}
+```
+
+
+```{r}
+#Loading all the required datasets
+setwd("~/Documents/HiChIP/datasets")
+hotspots = read.delim("PRDM9_BxC_germcells_peaks.txt")
+tss = read.delim("mm10_gencode_tss_unique.txt", header = F)
+enhancers = read.delim("testis_enhancers.txt", header = F)
+hichip = read.delim("5M_k4me3_BxC_allele_interactions.all.mango", header = FALSE)
+colnames(hichip) = c("seqnames","start","end","seqnames1","start1","end1")
+#hichip$chr = as.character(hichip$chr)
+colnames(tss) = c("seqnames","start","end")
+colnames(enhancers) = c("seqnames","start","end")
+colnames(hotspots) = c("seqnames","start","end")
+
+```
+
+
+```{r}
+## make annotations for anchors
+#anchor1 <- hichip %>% mutate(anchor = ifelse(id %in% intersect_bed(hichip[,1:3)], "hotspots", ifelse(tss %in% intersect_bed(,)[,"id"], "tss", "other")))) %>% mutate(anno = factor(anno, levels = c("fdr < 0.01", "within KO region", "QTL target", "Riok3"))) %>% arrange(anno)
+## make annotations for contacts
+
+```
+
+
+```{r}
+#subset(hichip[,1:3], (intersect_bed(hichip, tss) == TRUE)) 
+#anchor = hichip %>% mutate(anchor = ifelse(subset(hichip[,1:3], (intersect_bed(hichip, hotspots) == TRUE)), "hotspots", ifelse(subset(hichip[,1:3], (intersect_bed(hichip, tss) == TRUE)), "tss")), ifelse(subset(hichip[,1:3], (intersect_bed(hichip, enhancers) == TRUE)), "enhancers", "intergenic"))
+```
+
+
+```{r}
+#hichip %>% mutate(style = ifelse(subset(hichip[,1:3], (intersect_bed(hichip, enhancers) == TRUE)),"hot","not")) %>% head()
+```
+
+
+```{r}
+#Lets try it another way- I am converting the dataframe to Granges object and then use filter_by_overlaps function of plyranges to look at the overlaps. The idea is to convert the overlap data into dataframe and then add a column that has the information of the dataset which it overlapped it with.
+#nrow(subset(hichip[,1:3], (intersect_bed(hichip, tss) == TRUE))) 
+#filter_by_overlaps(hichip[,1:3],hotspots)
+#test1 = as_granges(hichip[,1:3])
+#test2 = as_granges(tss)
+#overlap = filter_by_overlaps(test1,test2)
+#as.data.frame(overlap) %>% mutate(anchor1="hotspots")
+
+#Creating peak IDs for the hichip dataset
+hichip$peakID = paste0("peak_",seq.int(nrow(hichip)))
+```
+I am getting different numbers of rows with filter_by_overlaps function versus the subset() code. The above code is foolproof so gonna use it real-examples.
+I can rbind all the filter_by_overlaps with each dataset and create a dataframe that can be later used for plotting.
+```{r}
+#Lets convert all the data to Granges
+anchors = as_granges(hichip[,c("seqnames", "start", "end", "peakID")])
+hotspots_granges = as_granges(hotspots)
+tss_granges = as_granges(tss)
+enhancers_granges = as_granges(enhancers)
+anchors_hotspots = as.data.frame(filter_by_overlaps(anchors,hotspots_granges)) %>% mutate(anchor1="hotspots")
+anchors_tss = as.data.frame(filter_by_overlaps(anchors,tss_granges)) %>% mutate(anchor1="tss")
+anchors_enhancers = as.data.frame(filter_by_overlaps(anchors,enhancers_granges)) %>% mutate(anchor1="enhancers")
+anchors_hichip_overlapping = as_granges(rbind(anchors_hotspots,anchors_tss, anchors_enhancers))
+#anchors_hichip_overlapping = unique_granges(as_granges(anchors_hichip_overlapping))
+anchors_hichip_nonoverlapping = as.data.frame(filter_by_non_overlaps(anchors, anchors_hichip_overlapping)) %>% mutate(anchor1 = "intergenic")
+#anchors_hichip_overlapping = unique(as.data.frame(anchors_hichip_overlapping))
+anchors_total = rbind(as_tibble(anchors_hichip_overlapping), anchors_hichip_nonoverlapping)
+test1 = anchors_total %>% distinct("seqnames", "start", "end", "width", "strand", "anchor1", .keep_all=TRUE)
+```
+#
+#Just realized that we need anchor1 and anchor2 points side by side; so I have to write a code against the whole hichip dataset.
+
+Similarly generate a dataframe for the contacts
+```{r}
+hichip[,7:8] = NULL #modify this while modifying the file 
+colnames(hichip) = c("seqnames_anchor", "start_anchor", "end_anchor", "seqnames", "start", "end", "peakID")
+contacts = as_granges(hichip[,4:7])
+contacts_hotspots = as.data.frame(filter_by_overlaps(contacts,hotspots_granges)) %>% mutate(anchor2="HOTSPOTS")
+contacts_tss = as.data.frame(filter_by_overlaps(contacts,tss_granges)) %>% mutate(anchor2="TSS")
+contacts_enhancers = as.data.frame(filter_by_overlaps(contacts,enhancers_granges)) %>% mutate(anchor2="ENHANCERS")
+contacts_hichip_overlapping = as_granges(rbind(contacts_hotspots,contacts_tss, contacts_enhancers))
+contacts_hichip_overlapping = (contacts_hichip_overlapping)
+contacts_hichip_nonoverlapping = as.data.frame(filter_by_non_overlaps(contacts, contacts_hichip_overlapping)) %>% mutate(anchor2 = "INTERGENIC")
+contacts_total = rbind(as.data.frame(contacts_hichip_overlapping), contacts_hichip_nonoverlapping)
+
+#Lets prepare a dataframe that has anchor1(noncapitalized) and anchor2(contact)(which are capitalized) annotation for plotting later
+#contacts_hichip_overlapping = as.data.frame(contacts_hichip_overlapping)
+#colnames(hichip) = c("seqnames", "start", "end", "seqnames1", "start1", "end1", "peakID")
+#hichip_annotation = rbind(contacts_hichip_overlapping, contacts_hichip_nonoverlapping, anchors_hichip_overlapping, anchors_hichip_nonoverlapping)
+```
+hichip_annotation dataset has all the annotation information in the anchor1 column - with the anchors(non-capitalized) and contacts(capitalized). Some annotations can be overlapping; thats why the hichip_annoation data has little more than twice the number of hichip rows
+#hichip annotation dataset has ~twice the number of total peaks as hichip dataset- suggesting the contacts and anchors are there in seperate rows
+```{r}
+##We need a way to collapse the dataset on the basis of start,end columns and have unique annotation in the anchor1 column
+hichip_total = right_join(hichip, anchors_total, by = "peakID") #Not getting the annotations side by side
+#colnames(contacts_total) = c("seqnames1", "start1", "end1", "width1", "strand1", "anchor2")
+#I have to add the anchor coordinates to join
+hichip_total = right_join(hichip_total, contacts_total, by = "peakID")
+#names(hichip_total)[7] <- "useless"
+```
+
+```{r}
+#rough code
+#hichip_annotation = hichip_annotation %>% dplyr::filter(!duplicated(cbind(start,end,width,anchor1)))
+
+#Number of anchors and contacts covered
+table(hichip_total$anchor1)
+table(hichip_total$anchor2)
+
+hichip_total %>% dplyr::group_by(anchor1, anchor2) %>% summarise(counts_contacts = n())
+
+hichip_total %>% dplyr::group_by(anchor1, anchor2) %>% summarise(counts_contacts = n(), groups=c("anchor1", "anchor2")) %>% ggplot(aes(x=anchor1, y=anchor2, size=counts_contacts)) + geom_point() + theme_classic() + xlab("Left anchor") + ylab("Right anchor")  +  labs(size="Number of Overlaps")
+
+#Plotting the numbers only for hotspots
+hichip_total %>% dplyr::group_by(anchor1, anchor2) %>% summarise(counts_contacts = n(), groups = c("anchor1", "anchor2")) %>% dplyr::filter(anchor1 == "hotspots") %>% ggplot(aes(x=anchor1, y=anchor2, size=counts_contacts)) + geom_point() + theme_classic() + xlab("Hotspot as left anchor") + ylab("Right anchor")  +  labs(size="Number of Overlaps")
+```
+Recently, hic data has been performed in individual stages of meiosis. These sort of analyses can be done with those hic datasets and such contacts can be annotated.
+
+1. Proportion, Significance of overlap
+2. Bigwig - KaryoplotR
+3. ChromHMM
+4. Looking at inter-chromosomal interactions
+5. CRISPR off SICAP candidates in HEK-P9
+6. Intergenic H3K4me3 associated with meiosis datasets and see how they are important in meiosis
+HiC pro filtering steps for inter-chromsomal interactions!!!
+
+Bed file of ChromHMM - integrate with the HiChIP data
+
+```{r}
+#Read the chromHMM bed file
+chromhmm = read.delim("Mouse_11_reordered_dense_chromHMM.bed", header = FALSE)
+colnames(chromhmm) = c("seqnames", "start", "end","cluster")
+chromhmm = chromhmm[,-c(5:9)] #there are blank rows that might create problems later
+```
+
+
+```{r}
+#overlap chromhmm with the anchors_total and contacts_total datasets
+#chromhmm_anchor = as.data.frame(filter_by_overlaps(as_granges(chromhmm), as_granges(anchors_total))) %>% mutate(locus = "ANCHORS")
+#chromhmm_contacts = as.data.frame(filter_by_overlaps(as_granges(chromhmm), as_granges(contacts_total))) %>% mutate(locus = "CONTACTS")
+
+#chromhmm_total = rbind(chromhmm_anchor, chromhmm_contacts)
+#chromhmm_total %>% dplyr::group_by(locus, cluster) %>% summarise(counts_clusters = n())
+
+#Need to get contacts and anchors side by side
+#chromhmm$peakClust = paste0("peakClus_",seq.int(nrow(chromhmm)))
+
+#merge the chrom hmm anchors + chrom hmm contacts (chromhmm total) with hichip data
+```
+
+
+```{r}
+colnames(hichip_total)
+#hichip_total[,1:12] = NULL
+chromhmm_co = as.data.frame(pair_overlaps(as_granges(contacts_total), as_granges(chromhmm))) %>% drop_na() %>% dplyr::distinct(peakID, cluster)
+chromhmm_an = as.data.frame(pair_overlaps(as_granges(anchors_total), as_granges(chromhmm))) %>% drop_na() %>% dplyr::distinct(peakID, cluster)
+
+chromhmm_total = right_join(chromhmm_co, chromhmm_an, by = "peakID")
+```
+chromhmm coordinates are large such that multiple annotations are getting mapped to a single location. Therefore, the number of rows in chromhmm total (anchors and contacts information) are larger than individual datasets. 
+
+```{r}
+chromhmm_total %>% dplyr::select(cluster.x, cluster.y) %>% dplyr::group_by(cluster.x, cluster.y) %>% dplyr::count() %>% ggplot(aes(x = cluster.x, y = cluster.y, size = n)) + geom_point() + scale_x_discrete(limits = factor(1:11)) + scale_y_discrete(limits = factor(1:11)) + theme_classic() + xlab("Left anchor HMM state") + ylab("Right anchor HMM state")  +  labs(size="Number of Overlaps")
+
+#Plotting the numbers only for hotspots (State 7)
+chromhmm_total %>% dplyr::select(cluster.x, cluster.y) %>% dplyr::group_by(cluster.x, cluster.y) %>% dplyr::count() %>% dplyr::filter(cluster.x == 7 | cluster.y == 7) %>% ggplot(aes(x = cluster.x, y = cluster.y, size = n)) + geom_point() + scale_x_discrete(limits = factor(1:11)) + scale_y_discrete(limits = factor(1:11)) + theme_classic() + xlab("Left anchor HMM state") + ylab("Right anchor HMM state") +  labs(size="Number of Overlaps")
+                                                              #ggplot(aes(x=anchor1, y=anchor2, size=counts_contacts)) + geom_point() + theme_classic() + xlab("Hotspot as anchor") + ylab("Contact")
+#chromhmm_total = chromhmm_total[!duplicated(chromhmm_total$peakID),]
+```
+
+
+```{r}
+#colnames(hichip_total)[14:16] = c("seqnames_contact", "start_contact", "end_contact")
+#colnames(hichip_total)[1:3] = c("seqnames", "start", "end")
+#chromhmm_anchor = as.data.frame(filter_by_overlaps(as_granges(chromhmm), as_granges(hichip_total)))
+#rough = left_join(chromhmm_anchor, chromhmm_total, by = c("start", "end"))
+
+#assign peak clust 
+
+
+#rm(rough)
+```
+
+
+
