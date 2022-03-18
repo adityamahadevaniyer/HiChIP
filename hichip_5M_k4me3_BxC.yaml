@@ -1,0 +1,6 @@
+peaks:
+ - /projects/baker-lab/mahada/BxC_mm10/scripts/H3K4me3_BxC_germcells_peaks.bed  
+resfrags:
+ - /projects/baker-lab/hichip/scripts/yaml/mm10_MboI_resfrag.bed.gz 
+hicpro_output:
+ - hichip_5M_k4me3_BxC
