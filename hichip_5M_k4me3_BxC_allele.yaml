@@ -1,0 +1,6 @@
+peaks:
+ - EACH,SELF  
+resfrags:
+ - /projects/baker-lab/hichip/scripts/yaml/mm10_MboI_resfrag.bed.gz 
+hicpro_output:
+ - hichip_5M_k4me3_BxC_allele
